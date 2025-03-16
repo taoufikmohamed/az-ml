@@ -1,0 +1,57 @@
+trigger:
+- main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  ARM_CLIENT_ID: $(servicePrincipalId)
+  ARM_CLIENT_SECRET: $(servicePrincipalKey)
+  ARM_SUBSCRIPTION_ID: $(subscriptionId)
+  ARM_TENANT_ID: $(tenantId)
+  RESOURCE_GROUP: 'myResourceGroup'
+  LOCATION: 'eastus'
+  WORKSPACE_NAME: 'myAMLWorkspace'
+  WORKSPACE_FRIENDLY_NAME: 'My AML Workspace'
+  STORAGE_ACCOUNT_NAME: 'mystorageaccount'
+  KEY_VAULT_NAME: 'mykeyvault'
+
+stages:
+- stage: DeployInfrastructure
+  jobs:
+  - job: ARMTemplateDeployment
+    steps:
+    - task: AzureResourceManagerTemplateDeployment@3
+      inputs:
+        deploymentScope: 'Resource Group'
+        azureResourceManagerConnection: 'AzureServiceConnection'
+        subscriptionId: $(ARM_SUBSCRIPTION_ID)
+        action: 'Create Or Update Resource Group'
+        resourceGroupName: $(RESOURCE_GROUP)
+        location: $(LOCATION)
+        templateLocation: 'Linked artifact'
+        csmFile: 'azureml-infra.json'
+        csmParametersFile: ''
+        overrideParameters: |
+          workspaceName=$(WORKSPACE_NAME)
+          workspaceFriendlyName=$(WORKSPACE_FRIENDLY_NAME)
+          storageAccountName=$(STORAGE_ACCOUNT_NAME)
+          keyVaultName=$(KEY_VAULT_NAME)
+        deploymentMode: 'Incremental'
+
+- stage: RegisterDatasetsAndCode
+  dependsOn: DeployInfrastructure
+  jobs:
+  - job: RegisterDatasets
+    steps:
+    - script: |
+        pip install azureml-core
+        python register_datasets.py --workspace_name $(WORKSPACE_NAME) --resource_group $(RESOURCE_GROUP) --subscription_id $(ARM_SUBSCRIPTION_ID)
+      displayName: 'Register Datasets'
+
+  - job: RegisterMLCode
+    steps:
+    - script: |
+        pip install azureml-core
+        python register_ml_code.py --workspace_name $(WORKSPACE_NAME) --resource_group $(RESOURCE_GROUP) --subscription_id $(ARM_SUBSCRIPTION_ID)
+      displayName: 'Register ML Code'
