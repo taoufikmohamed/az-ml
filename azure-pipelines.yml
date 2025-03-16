@@ -4,54 +4,34 @@ trigger:
 pool:
   vmImage: 'ubuntu-latest'
 
-variables:
-  ARM_CLIENT_ID: $(servicePrincipalId)
-  ARM_CLIENT_SECRET: $(servicePrincipalKey)
-  ARM_SUBSCRIPTION_ID: $(subscriptionId)
-  ARM_TENANT_ID: $(tenantId)
-  RESOURCE_GROUP: 'myResourceGroup'
-  LOCATION: 'eastus'
-  WORKSPACE_NAME: 'myAMLWorkspace'
-  WORKSPACE_FRIENDLY_NAME: 'My AML Workspace'
-  STORAGE_ACCOUNT_NAME: 'mystorageaccount'
-  KEY_VAULT_NAME: 'mykeyvault'
-
 stages:
-- stage: DeployInfrastructure
+- stage: GenerateData
   jobs:
-  - job: ARMTemplateDeployment
+  - job: Generate
     steps:
-    - task: AzureResourceManagerTemplateDeployment@3
+    - task: UsePythonVersion@0
       inputs:
-        deploymentScope: 'Resource Group'
-        azureResourceManagerConnection: 'AzureServiceConnection'
-        subscriptionId: $(ARM_SUBSCRIPTION_ID)
-        action: 'Create Or Update Resource Group'
-        resourceGroupName: $(RESOURCE_GROUP)
-        location: $(LOCATION)
-        templateLocation: 'Linked artifact'
-        csmFile: 'azureml-infra.json'
-        csmParametersFile: ''
-        overrideParameters: |
-          workspaceName=$(WORKSPACE_NAME)
-          workspaceFriendlyName=$(WORKSPACE_FRIENDLY_NAME)
-          storageAccountName=$(STORAGE_ACCOUNT_NAME)
-          keyVaultName=$(KEY_VAULT_NAME)
-        deploymentMode: 'Incremental'
+        versionSpec: '3.x'
+        addToPath: true
 
-- stage: RegisterDatasetsAndCode
-  dependsOn: DeployInfrastructure
+    - script: |
+        python -m pip install --upgrade pip
+        pip install numpy pandas
+        python generate_data.py
+      displayName: 'Generate Synthetic Data'
+
+- stage: TrainModel
+  dependsOn: GenerateData
   jobs:
-  - job: RegisterDatasets
+  - job: Train
     steps:
-    - script: |
-        pip install azureml-core
-        python register_datasets.py --workspace_name $(WORKSPACE_NAME) --resource_group $(RESOURCE_GROUP) --subscription_id $(ARM_SUBSCRIPTION_ID)
-      displayName: 'Register Datasets'
+    - task: UsePythonVersion@0
+      inputs:
+        versionSpec: '3.x'
+        addToPath: true
 
-  - job: RegisterMLCode
-    steps:
     - script: |
-        pip install azureml-core
-        python register_ml_code.py --workspace_name $(WORKSPACE_NAME) --resource_group $(RESOURCE_GROUP) --subscription_id $(ARM_SUBSCRIPTION_ID)
-      displayName: 'Register ML Code'
+        python -m pip install --upgrade pip
+        pip install pandas scikit-learn joblib
+        python train_model.py
+      displayName: 'Train Machine Learning Model'
